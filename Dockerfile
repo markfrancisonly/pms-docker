@@ -5,9 +5,7 @@ ARG S6_OVERLAY_ARCH=amd64
 ARG PLEX_BUILD=linux-x86_64
 ARG PLEX_DISTRO=debian
 ARG DEBIAN_FRONTEND="noninteractive"
-ARG INTEL_NEO_VERSION=20.48.18558
-ARG INTEL_IGC_VERSION=1.0.5699
-ARG INTEL_GMMLIB_VERSION=20.3.2
+ARG INTEL_COMPUTE_RUNTIME_VERSION=22.26.23599
 ENV TERM="xterm" LANG="C.UTF-8" LC_ALL="C.UTF-8"
 
 ENTRYPOINT ["/init"]
@@ -17,6 +15,7 @@ RUN \
     apt-get update && \
     apt-get install -y \
       tzdata \
+      jq \
       curl \
       xmlstarlet \
       uuid-runtime \
@@ -29,14 +28,6 @@ RUN \
     curl -J -L -o /tmp/s6-overlay-${S6_OVERLAY_ARCH}.tar.gz https://github.com/just-containers/s6-overlay/releases/download/${S6_OVERLAY_VERSION}/s6-overlay-${S6_OVERLAY_ARCH}.tar.gz && \
     tar xzf /tmp/s6-overlay-${S6_OVERLAY_ARCH}.tar.gz -C / --exclude='./bin' && \
     tar xzf /tmp/s6-overlay-${S6_OVERLAY_ARCH}.tar.gz -C /usr ./bin && \
-    \
-# Fetch and install Intel Compute Runtime and its deps
-    curl -J -L -o /tmp/gmmlib.deb https://github.com/intel/compute-runtime/releases/download/${INTEL_NEO_VERSION}/intel-gmmlib_${INTEL_GMMLIB_VERSION}_amd64.deb && \
-    apt install -y /tmp/gmmlib.deb && \
-    curl -J -L -o /tmp/#1.deb https://github.com/intel/intel-graphics-compiler/releases/download/igc-${INTEL_IGC_VERSION}/{intel-igc-core,intel-igc-opencl}_${INTEL_IGC_VERSION}_amd64.deb && \
-    apt install -y /tmp/intel-igc-core.deb /tmp/intel-igc-opencl.deb && \
-    curl -J -L -o /tmp/intel-opencl.deb https://github.com/intel/compute-runtime/releases/download/${INTEL_NEO_VERSION}/intel-opencl_${INTEL_NEO_VERSION}_amd64.deb && \
-    apt install -y /tmp/intel-opencl.deb && \
     \
 # Add user
     useradd -U -d /config -s /bin/false plex && \
@@ -55,6 +46,16 @@ RUN \
     rm -rf /var/lib/apt/lists/* && \
     rm -rf /tmp/* && \
     rm -rf /var/tmp/*
+
+# Fetch and install Intel Compute Runtime and its deps
+RUN INTEL_URLS=$(curl -fsSL "https://api.github.com/repos/intel/compute-runtime/releases/tags/${INTEL_COMPUTE_RUNTIME_VERSION}" | jq -r '.body' | grep wget | sed 's|wget ||g') && \
+    mkdir -p /intel && \
+    for i in ${INTEL_URLS}; do \
+        i=$(echo ${i} | tr -d '\r'); \
+        curl -o "/intel/$(basename ${i})" -L "${i}"; \
+    done && \
+    dpkg -i /intel/*.deb && \
+    rm -rf /intel
 
 EXPOSE 32400/tcp 8324/tcp 32469/tcp 1900/udp 32410/udp 32412/udp 32413/udp 32414/udp
 VOLUME /config /transcode
